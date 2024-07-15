@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no" />
+    <meta name="description" content="Create 3D models using glTF." />
+    <meta name="cesium-sandcastle-labels" content="Tutorials,Showcases" />
+    <title>Cesium Demo</title>
+    <script type="text/javascript" src="../Sandcastle-header.js"></script>
+    <script
+      type="text/javascript"
+      src="../../../Build/CesiumUnminified/Cesium.js"
+      nomodule></script>
+    <script type="module" src="../load-cesium-es6.js"></script>
+  </head>
+  <body
+    class="sandcastle-loading"
+    data-sandcastle-bucket="bucket-requirejs.html">
+    <style>
+      @import url(../templates/bucket.css);
+    </style>
+    <div id="cesiumContainer" class="fullSize"></div>
+    <div id="loadingOverlay"><h1>Loading...</h1></div>
+    <div id="toolbar"></div>
+    <script id="cesium_sandcastle_script">
+      window.startup = async function (Cesium) {
+        "use strict";
+        //Sandcastle_Begin
+        const viewer = new Cesium.Viewer("cesiumContainer");
+
+// Stores the tileset that is currently selected
+let currentTileset;
+
+// Creates a custom fragment shader for visualizing the feature IDs.
+// This fetches the feature ID for the fragment from the
+// fsInput.featureIds.featureId_0 structure, and just assigns
+// a color to the fragment, based on this feature ID
+function createCustomShader() {
+  const customShader = new Cesium.CustomShader({
+    fragmentShaderText: `
+      void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
+        int id = fsInput.featureIds.featureId_0;
+        vec3 color = vec3(0.0, 0.0, 0.0);
+        if (id == 0) {
+          color = vec3(0.0, 1.0, 0.0);
+        } else if (id == 1) {
+          color = vec3(0.5, 0.5, 0.5);
+        } else if (id == 2) {
+          color = vec3(1.0, 0.0, 0.0);
+        } else if (id == 3) {
+          color = vec3(0.0, 0.0, 1.0);
+        }
+        material.diffuse = color;
+      }
+    `,
+  });
+  return customShader;
+}
+
+// Creates the tileset from the tileset.json in the given subdirectory
+async function createTileset(subdirectory) {
+  if (Cesium.defined(currentTileset)) {
+    viewer.scene.primitives.remove(currentTileset);
+    currentTileset = undefined;
+  }
+  // Create the tileset, and move it to a certain position on the globe
+  currentTileset = viewer.scene.primitives.add(
+    await Cesium.Cesium3DTileset.fromUrl(
+      `./${subdirectory}/tileset.json`,
+      {
+        debugShowBoundingVolume: true,
+      }
+    )
+  );
+  currentTileset.modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(
+    Cesium.Cartesian3.fromDegrees(-75.152325, 39.94704, 0)
+  );
+  const offset = new Cesium.HeadingPitchRange(
+    0,
+    Cesium.Math.toRadians(-22.5),
+    4.0
+  );
+  viewer.zoomTo(currentTileset, offset);
+
+  // Assign the custom shader that visualizes the feature IDs to the tileset
+  currentTileset.customShader = createCustomShader();
+}
+
+function obtainFeature(picked) {
+  if (!Cesium.defined(picked)) {
+    return undefined;
+  }
+  const isFeature = picked instanceof Cesium.Cesium3DTileFeature;
+  if (!isFeature) {
+    return undefined;
+  }
+  return picked;
+}
+const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+handler.setInputAction(function (movement) {
+  let tooltipText = "";
+  const picked = viewer.scene.pick(movement.endPosition);
+
+
+  const feature = obtainFeature(picked);
+  console.log('feature: ', feature);
+  if (!feature) return
+  const propertyKeys = feature.getPropertyIds();
+  console.log('propertyKeys: ', propertyKeys);
+}, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+function createInfoTextDisplay() {
+  const infoTextDisplay = document.createElement("div");
+  infoTextDisplay.style.background = "rgba(42, 42, 42, 0.7)";
+  infoTextDisplay.style.padding = "5px 10px";
+  infoTextDisplay.style.marginTop = "5px";
+  return infoTextDisplay;
+}
+const infoTextDisplay = createInfoTextDisplay();
+function setInfoText(infoText) {
+  infoTextDisplay.textContent = infoText;
+}
+
+// Create one entry for the list of examples that can
+// be selected in the dropdown menu. Selecting one of
+// these will load the tileset for the sample in the
+// given directory, and display the given info text in
+// the infoTextDisplay
+function createSampleOption(name, directory, infoText) {
+  return {
+    text: name,
+    onselect: async function () {
+      await createTileset(name);
+      setInfoText(infoText);
+    },
+  };
+}
+
+// Create the list of available samples, and add them
+// to the sandcastle toolbar
+const sampleOptions = [
+  createSampleOption(
+    "FeatureIdAttribute",
+    "glTF/EXT_mesh_features/FeatureIdAttribute",
+    "Feature IDs for the vertices, using a feature ID attribute"
+  ),
+
+  createSampleOption(
+    "FeatureIdTexture",
+    "glTF/EXT_mesh_features/FeatureIdTexture",
+    "Feature IDs for texels, using a feature ID texture"
+  ),
+];
+Sandcastle.addToolbarMenu(sampleOptions);
+
+// Add a toggle button to the toolbar, for selecting whether
+// feature IDs should be visualized. When it is selected,
+// then the tileset receives the custom shader that visualizes
+// the feature IDs. Otherwise, the custom shader of the tileset
+// is set to 'undefined', causing it to be rendered with the
+// default shader.
+Sandcastle.addToggleButton("Visualize Feature IDs", true, function (checked) {
+  if (checked) {
+    currentTileset.customShader = createCustomShader();
+  } else {
+    currentTileset.customShader = undefined;
+  }
+});
+
+// Add the component that will dispplay the info text
+// to the sandcastle toolbar
+document.getElementById("toolbar").appendChild(infoTextDisplay);
+
+      };
+      if (typeof Cesium !== "undefined") {
+        window.startupCalled = true;
+        window.startup(Cesium).catch((error) => {
+          "use strict";
+          console.error(error);
+        });
+        Sandcastle.finishedLoading();
+      }
+    </script>
+  </body>
+</html>
