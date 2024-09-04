@@ -2,7 +2,7 @@ import fs from 'fs';
 
 // 创建1000x1000排列的VEC3数据
 const rows = 1000;
-const cols = 1000;
+const cols = 500;
 const vec3Data = [];
 
 for (let i = 0; i < rows; i++) {
@@ -22,8 +22,10 @@ for (let i = 0; i < vec3Data.length; i++) {
 // 将Float32Array转换为ArrayBuffer
 const buffer = float32Array.buffer;
 
+console.log(buffer.byteLength, 'buffer.byteLength')
+
 // 将ArrayBuffer保存为.bin文件
-fs.writeFileSync('single_component_transform.bin', Buffer.from(buffer));
+fs.writeFileSync('component_100000.bin', Buffer.from(buffer));
 
 // 创建GLTF JSON
 const gltf = {

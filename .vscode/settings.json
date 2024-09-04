@@ -30,5 +30,5 @@
     "javascript.format.placeOpenBraceOnNewLineForFunctions": false,
     "javascript.format.placeOpenBraceOnNewLineForControlBlocks": false,
     "glTF.defaultV2Engine": "Cesium",
-    "liveServer.settings.port": 5501
+    "liveServer.settings.port": 5502
 }

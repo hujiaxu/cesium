@@ -72,7 +72,7 @@
       "bufferView": 3,
       "byteOffset": 0,
       "componentType": 5126,
-      "count": 1000000,
+      "count": 2000000,
       "type": "VEC3"
     },
     {
@@ -112,7 +112,7 @@
     {
       "buffer": 1,
       "byteOffset": 0,
-      "byteLength": 12000000
+      "byteLength": 24000000
     },
     {
       "buffer": 2,
@@ -131,7 +131,7 @@
 			"uri":"cube_instance.bin"
 		},
     {
-      "byteLength": 12000000,
+      "byteLength": 24000000,
       "uri": "data.bin"
     },
     {
@@ -144,7 +144,6 @@
     }
 	],
   "extensionsUsed": [
-    "EXT_mesh_gpu_instancing",
-    "EXT_instance_features"
+    "EXT_mesh_gpu_instancing"
   ]
 }
