@@ -145,6 +145,7 @@ describe(
       const primitive = gltfLoader.components.nodes[0].primitives[0];
       const renderResources = mockRenderResources();
       const { shaderBuilder, uniformMap } = renderResources;
+      console.log('uniformMap: ', uniformMap);
 
       MaterialPipelineStage.process(renderResources, primitive, mockFrameState);
 

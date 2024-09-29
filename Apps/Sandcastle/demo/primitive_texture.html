@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no" />
+  <meta name="description" content="Create 3D models using glTF." />
+  <meta name="cesium-sandcastle-labels" content="Tutorials,Showcases" />
+  <title>Cesium Demo</title>
+  <script type="text/javascript" src="../Sandcastle-header.js"></script>
+  <script type="text/javascript" src="../../../Build/CesiumUnminified/Cesium.js" nomodule></script>
+  <script type="module" src="../load-cesium-es6.js"></script>
+</head>
+
+<body class="sandcastle-loading" data-sandcastle-bucket="bucket-requirejs.html">
+  <style>
+    @import url(../templates/bucket.css);
+  </style>
+  <div id="cesiumContainer" class="fullSize"></div>
+  <div id="loadingOverlay">
+    <h1>Loading...</h1>
+  </div>
+  <div id="toolbar"></div>
+  <script id="cesium_sandcastle_script">
+
+    const getInstanceCount = (node) => {
+      if (!node || !node.extensions || !node.extensions.EXT_mesh_gpu_instancing) {
+        return 0
+      }
+
+      return 1
+    }
+    const parseGlb = async (arrayBuffer) => {
+      return new Promise((resolve, reject) => {
+
+        const dataView = new DataView(arrayBuffer);
+
+        // 1. 解析 Header (20 bytes)
+        const magic = dataView.getUint32(0, true); // 0x676C5446 ('glTF')
+        const version = dataView.getUint32(4, true); // 2
+        const totalLength = dataView.getUint32(8, true); // Total file length
+
+        console.log(`GLB Version: ${version}, Total Length: ${totalLength} bytes`);
+
+        const jsonChunkLength = dataView.getUint32(12, true); // Length of JSON chunk
+        const jsonChunkType = dataView.getUint32(16, true); // Type 'JSON' (0x4E4F534A)
+
+        if (jsonChunkType !== 0x4E4F534A) {
+          reject('The first chunk is not a JSON chunk');
+          return;
+        }
+
+        const jsonChunkData = new Uint8Array(arrayBuffer, 20, jsonChunkLength);
+        const jsonText = new TextDecoder().decode(jsonChunkData);
+        const json = JSON.parse(jsonText);
+
+        const binaryChunkHeaderOffset = 20 + jsonChunkLength;
+        if (binaryChunkHeaderOffset < totalLength) {
+          const binaryChunkLength = dataView.getUint32(binaryChunkHeaderOffset, true);
+          const binaryChunkType = dataView.getUint32(binaryChunkHeaderOffset + 4, true); // Type 'BIN' (0x004E4942)
+
+          if (binaryChunkType !== 0x004E4942) {
+            reject('The second chunk is not a binary chunk');
+            return;
+          }
+
+          const binChunk =
+          {
+            byteLength: binaryChunkLength,
+            byteOffset: binaryChunkHeaderOffset + 8,
+            type: 'bin',
+            arrayBuffer,
+            binBuffer: arrayBuffer.slice(binaryChunkHeaderOffset + 8, binaryChunkHeaderOffset + 8 + binaryChunkLength)
+          }
+          const header = {
+            byteLength: totalLength,
+            byteOffset: 0,
+            hasBinChunk: true
+          }
+
+          resolve({ json, binChunk, version, header });
+
+        }
+      })
+    }
+    const getAccessorTypeSize = (accessor) => {
+      switch (accessor.componentType) {
+        case 5120: return 1; // BYTE
+        case 5121: return 1; // UNSIGNED_BYTE
+        case 5122: return 2; // SHORT
+        case 5123: return 2; // UNSIGNED_SHORT
+        case 5125: return 4; // UNSIGNED_INT
+        case 5126: return 4; // FLOAT
+        default: return 0;
+      }
+    }
+
+    const getNumComponents = (type) => {
+      switch (type) {
+        case 'SCALAR': return 1;
+        case 'VEC2': return 2;
+        case 'VEC3': return 3;
+        case 'VEC4': return 4;
+        case 'MAT2': return 4;
+        case 'MAT3': return 9;
+        case 'MAT4': return 16;
+        default: return 0;
+      }
+    }
+
+
+    const readGlb = async (url) => {
+      return new Promise(async (resolve, reject) => {
+
+        const response = await fetch(url);
+        const blob = await response.blob();
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          if (!e.target) return
+          const arrayBuffer = e.target.result;
+          parseGlb(arrayBuffer)
+            .then((res) => {
+              resolve(res)
+            })
+            .catch((err) => {
+              reject(err)
+            })
+        };
+        reader.readAsArrayBuffer(blob);
+      })
+    }
+
+    const extractGltfData = async (name) => {
+      const gltf = await readGlb(`./${name}.glb`);
+
+      const processedGltf = gltf.json
+      console.log('processedGltf: ', processedGltf);
+      const accessors = processedGltf.accessors;
+      const bufferViews = processedGltf.bufferViews;
+      const meshes = processedGltf.meshes;
+      const nodes = processedGltf.nodes;
+      const binChunk = gltf.binChunk;
+      const accessorsData = []
+
+      for (let i = 0; i < accessors.length; i++) {
+        const accessor = accessors[i];
+        const bufferView = bufferViews[accessor.bufferView];
+
+        const binChunkByteOffset = binChunk.byteOffset || 0;
+        const binChunkByteLength = binChunk.byteLength || binChunk.byteLength;
+
+        const byteOffset = binChunkByteOffset + (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+        const byteStride = bufferView.byteStride || getAccessorTypeSize(accessor) * getNumComponents(accessor.type);
+        const componentSize = getAccessorTypeSize(accessor);
+        const numComponents = getNumComponents(accessor.type);
+
+        const values = [];
+
+        for (let j = 0; j < accessor.count; j++) {
+          const elementOffset = byteOffset + j * byteStride;
+
+          for (let k = 0; k < numComponents; k++) {
+            const componentOffset = elementOffset + k * componentSize;
+
+            if (componentOffset + componentSize > binChunkByteOffset + binChunkByteLength) {
+              console.error(`Attempt to read outside of the buffer range. Skipping.`);
+              break;
+            }
+
+            const view = new DataView(binChunk.arrayBuffer, componentOffset, componentSize);
+
+            if (accessor.componentType === 5126) { // FLOAT
+              values.push(view.getFloat32(0, true));
+            } else if (accessor.componentType === 5123) { // UNSIGNED_SHORT
+              values.push(view.getUint16(0, true));
+            } else if (accessor.componentType === 5121) { // UNSIGNED_BYTE
+              values.push(view.getUint8(0));
+            } else {
+              console.error(`Unsupported component type: ${accessor.componentType}`);
+              break;
+            }
+          }
+        }
+
+        accessorsData[i] = values;
+      }
+
+      const extractNodes = loadNodes(nodes, meshes)
+
+      return {
+        extractNodes,
+        accessorsData
+      }
+
+    }
+
+
+    const getNodeAttributes = (node, mesh) => {
+      let attributes = {
+        ...mesh.primitives[0].attributes
+      }
+      attributes.indices = mesh.primitives[0].indices
+      attributes.material = mesh.primitives[0].material
+      if (getInstanceCount(node)) {
+        attributes = {
+          ...attributes,
+          ...node.extensions.EXT_mesh_gpu_instancing.attributes
+        }
+      }
+      return attributes
+    }
+
+    const loadNodes = (nodes, meshes) => {
+      const primitives = []
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const meshIndex = node.mesh;
+        const mesh = meshes[meshIndex];
+        const attributes = getNodeAttributes(node, mesh);
+        const primitive = {
+          name: node.name,
+          // instanceCount: getInstanceCount(node),
+          attributes,
+          nodes
+        }
+        primitives.push(primitive)
+      }
+      return primitives
+      // const primitives = meshes.map((mesh, meshIndex) => {
+      //   const meshesInNode = nodes.filter(node => node.mesh === meshIndex)
+      //   const name = mesh.name || meshesInNode[0].name
+      //   const attributes = getMeshAttributes(mesh);
+      //   const matrixAttributes = getMatrixAttributes(meshesInNode);
+      //   const primitive = {
+      //     name,
+      //     attributes: {
+      //       ...attributes,
+      //       ...matrixAttributes
+      //     },
+      //     nodes: meshesInNode
+      //   }
+
+      //   return primitive
+      // })
+
+      // console.log('primitives: ', primitives);
+      // return primitives
+    }
+
+    const setAttributes = (values, componentsPerAttribute, type) => {
+      return new Cesium.GeometryAttribute({
+        componentDatatype: type,
+        componentsPerAttribute: componentsPerAttribute,
+        values: values
+      })
+    }
+
+
+
+    const loadGeometry = (geometryAttribute, indices) => {
+
+      let geometry = new Cesium.Geometry({
+        attributes: geometryAttribute,
+        indices,
+        boundingSphere: Cesium.BoundingSphere.fromVertices(accessorsData[attributes.POSITION]),
+        primitiveType: Cesium.PrimitiveType.TRIANGLES,
+      })
+      geometry = Cesium.GeometryPipeline.computeNormal(geometry)
+
+      // geometry = Cesium.GeometryPipeline.computeTangentAndBitangent(geometry)
+
+      return geometry
+    }
+
+
+    const loadGeometryInstances = (geometry, translationData, scaleData, rotationData, nodes) => {
+      const count = translationData.length / 3
+      const instances = []
+
+      for (let i = 0; i < count; i++) {
+        const translation = new Cesium.Cartesian3(translationData[i * 3], translationData[i * 3 + 1], translationData[i * 3 + 2])
+        const translationMatrix = Cesium.Matrix4.fromTranslation(translation)
+
+        const scale = new Cesium.Cartesian3(scaleData[i * 3], scaleData[i * 3 + 1], scaleData[i * 3 + 2])
+        const scaleMatrix = Cesium.Matrix4.fromScale(scale)
+
+        const quaternion = new Cesium.Quaternion(rotationData[i * 4], rotationData[i * 4 + 1], rotationData[i * 4 + 2], rotationData[i * 4 + 3])
+        const rotationMatrix = Cesium.Matrix3.fromQuaternion(quaternion)
+
+        const modelMatrix = Cesium.Matrix4.IDENTITY.clone()
+        Cesium.Matrix4.multiply(modelMatrix, translationMatrix, modelMatrix)
+        // Cesium.Matrix4.multiplyByMatrix3(modelMatrix, rotationMatrix, modelMatrix)
+        Cesium.Matrix4.multiply(modelMatrix, scaleMatrix, modelMatrix)
+
+        const instance = new Cesium.GeometryInstance({
+          geometry: geometry,
+          modelMatrix,
+          id: nodes[0].name + i,
+          attributes: {
+            // color: Cesium.ColorGeometryInstanceAttribute.fromColor(color),
+            show: new Cesium.ShowGeometryInstanceAttribute(true)
+          }
+        })
+        instances.push(instance)
+      }
+
+
+      return instances
+    }
+
+
+    const loadPrimitive = (geometryInstances) => {
+
+      const imageHeight = 715
+      const imageWidth = 328
+      return new Cesium.Primitive({
+        geometryInstances,
+        appearance: new Cesium.MaterialAppearance({
+          faceForward: true,
+          material: new Cesium.Material({
+            // minificationFilter: Cesium.TextureMinificationFilter.NEAREST,
+            // magnificationFilter: Cesium.TextureMagnificationFilter.NEAREST,
+            fabric: {
+              type: 'Image',
+              // type: 'PolylinePulseLink',
+              uniforms: {
+                // u_baseColor: Cesium.Cartesian4.fromArray(materialColor),
+                // u_roughness: material.roughnessFactor,
+                // u_metallic: material.metallicFactor,
+                image: './yangguang.png',
+                u_imageSize: new Cesium.Cartesian2(imageWidth, imageHeight),
+                // repeat : {
+                //   x : 2,
+                //   y : 2
+                // }
+              },
+              // components : {
+              //   diffuse : 'texture(image, materialInput.st).rgb'
+              // }
+            //   source: `czm_material czm_getMaterial(czm_materialInput materialInput) {
+            //   czm_material material = czm_getDefaultMaterial(materialInput);
+
+            //   vec2 st = materialInput.st;
+
+
+            //   vec4 positionMC = czm_inverseModelView * vec4(materialInput.positionToEyeEC, 1.0);
+
+            //   vec4 textureColor = texture(image, vec2(st.x, 1.0 - st.y)).rgba;
+
+            //   float pi = 3.14159;
+            //   // 法线向量
+            //   vec3 normal = normalize(materialInput.normalEC);
+
+            //   material.diffuse = textureColor.rgb;
+            //   // material.specular = 1.;
+            //   // material.normal = normal;
+            //   // material.alpha = textureColor.a;
+
+
+            //   return material;
+            // }`
+            },
+
+          }),
+          //     vertexShaderSource: `
+          //     in vec3 position3DHigh;
+          //     in vec3 position3DLow;
+          //     in vec3 normal;
+          //     in vec2 st;
+          //   in float batchId;
+
+          //     out vec3 v_positionEC;
+          //     out vec3 v_normalEC;
+          //     out vec2 v_st;
+
+          //     void main() {
+          //         vec4 position = czm_modelViewProjectionRelativeToEye * czm_computePosition();
+          //         v_positionEC = (czm_modelView * czm_computePosition()).xyz;  // 眼坐标系中的位置
+          //         v_normalEC = normal;  // 法线
+          //         v_st = st;  // 纹理坐标
+          //         gl_Position = position;
+          //     }
+          // `,
+          //     fragmentShaderSource: `
+          //     in vec3 v_positionEC;
+          //     in vec3 v_normalEC;
+          //     in vec2 v_st;
+
+          //     uniform sampler2D image;
+          //     uniform vec2 u_imageSize;
+
+          //     void main() {
+          //         // 从纹理中采样颜色
+          //         // vec4 baseColorWithAlpha = vec4(${materialColor[0]}, ${materialColor[1]}, ${materialColor[2]}, ${materialColor[3]}).rgba;
+
+          //         // vec3 diffuse = baseColorWithAlpha.rgb;
+          //         // float alpha = baseColorWithAlpha.a;
+
+          //         vec4 textureColor = texture(image, vec2(v_st)).rgba;
+
+          //         out_FragColor = vec4(v_st.xy, 1., 1.);
+          //     }
+          // `,
+
+          renderState: {
+            depthTest: {
+              enabled: true
+            }
+          }
+        }),
+        // shadows: Cesium.ShadowMode.CAST_ONLY,
+        // releaseGeometryInstances: false,
+        asynchronous: false
+      })
+
+    }
+
+    const loadPrimitives = async (extractNodes, accessorsData) => {
+
+      const primitives = []
+
+      for (const extractNode of extractNodes) {
+
+        const attributes = extractNode.attributes
+        const indices = new Uint16Array(accessorsData[attributes.indices])
+        const position = setAttributes(new Float64Array(accessorsData[attributes.POSITION]), 3, Cesium.ComponentDatatype.DOUBLE) // attributes.POSITION
+        console.log('position: ', new Array(24).fill(1).map((_, i) => [accessorsData[attributes.POSITION][i * 3], accessorsData[attributes.POSITION][i * 3 + 1], accessorsData[attributes.POSITION][i * 3 + 2]]));
+        // const normal = setAttributes(new Float32Array(normalData), 3, Cesium.ComponentDatatype.FLOAT) // attributes.NORMAL
+        const translationData = attributes.TRANSLATION instanceof Array ? attributes.TRANSLATION : accessorsData[attributes.TRANSLATION]
+        const scaleData = attributes.SCALE instanceof Array ? attributes.SCALE : accessorsData[attributes.SCALE]
+        const rotationData = attributes.ROTATION instanceof Array ? attributes.ROTATION : accessorsData[attributes.ROTATION]
+        const nodes = extractNode.nodes
+
+        const stData = accessorsData[attributes.TEXCOORD_0].map(val => Math.round(val))
+
+        const st = setAttributes(new Float32Array(stData), 2, Cesium.ComponentDatatype.FLOAT)
+        console.log('accessorsData[attributes.TEXCOORD_0]: ', new Array(24).fill(1).map((_, i) => [accessorsData[attributes.TEXCOORD_0][i * 2], accessorsData[attributes.TEXCOORD_0][i * 2 + 1]]));
+
+
+        const geometryAttribute = {
+          position,
+          // normal,
+          // color
+          st
+        }
+
+        let geometry = new Cesium.Geometry({
+          attributes: geometryAttribute,
+          indices,
+          boundingSphere: Cesium.BoundingSphere.fromVertices(accessorsData[attributes.POSITION]),
+          primitiveType: Cesium.PrimitiveType.TRIANGLES,
+        })
+        geometry = Cesium.GeometryPipeline.computeNormal(geometry)
+
+
+
+        const geometryInstances = loadGeometryInstances(geometry, translationData, scaleData, rotationData, nodes)
+
+        const primitive = loadPrimitive(geometryInstances)
+
+        primitives.push(primitive)
+      }
+
+      return primitives
+    }
+
+    window.startup = async function(Cesium) {
+      "use strict";
+      //Sandcastle_Begin
+
+      Cesium.Ion.defaultAccessToken =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YzMxODZlYi1jNDhjLTRjODYtODgxNS01ODliNTU0YmY2NDMiLCJpZCI6Njg3NDIsImlhdCI6MTYzMjgyNzg0NH0.FX-F1srgLf2QorYyapx2VL44TJtgkdwdOAG7tqJmSxY";
+
+      const pos = [
+        new Cesium.Cartesian3(
+          -1834051.9741325895,
+          5608007.865243541,
+          2414183.3792176084
+        ),
+        new Cesium.Cartesian3(
+          -1834055.844784437,
+          5608004.334257179,
+          2414188.5648715287
+        ),
+        new Cesium.Cartesian3(
+          -1834061.0465333706,
+          5608004.287396963,
+          2414184.688053879
+        )
+      ]
+      const viewer = new Cesium.Viewer("cesiumContainer");
+      viewer.scene.debugShowFramesPerSecond = true
+
+      const { extractNodes, accessorsData } = await extractGltfData('texture_test')
+
+      const primitives = await loadPrimitives(extractNodes, accessorsData)
+
+
+      const boundingSphere = Cesium.BoundingSphere.fromPoints(pos)
+      const modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(boundingSphere.center)
+      const modelMatrixInverse = Cesium.Matrix4.inverse(modelMatrix, new Cesium.Matrix4())
+
+      const rotationX = Cesium.Matrix3.fromRotationX(Cesium.Math.toRadians(-90))
+      const rotationXInverse = Cesium.Matrix3.fromRotationX(Cesium.Math.toRadians(90))
+      const rotationZ = Cesium.Matrix3.fromRotationY(Cesium.Math.toRadians(90))
+      const rotationZInverse = Cesium.Matrix3.fromRotationY(Cesium.Math.toRadians(-90))
+
+
+      primitives.forEach(primitive => {
+        primitive.modelMatrix = modelMatrix.clone()
+
+        Cesium.Matrix4.multiplyByMatrix3(primitive.modelMatrix, rotationX, primitive.modelMatrix)
+        Cesium.Matrix4.multiplyByMatrix3(primitive.modelMatrix, rotationZ, primitive.modelMatrix)
+        viewer.scene.primitives.add(primitive)
+      })
+
+      viewer.camera.flyToBoundingSphere(boundingSphere, {
+        duration: 1,
+        offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-30), 60),
+      })
+
+
+      const handler = new Cesium.ScreenSpaceEventHandler(viewer.canvas);
+      const scene = viewer.scene;
+      handler.setInputAction((pos) => {
+        const pick = scene.pick(pos.position);
+        console.log('pick: ', pick);
+        if (Cesium.defined(pick) && pick.detail && pick.detail.node) {
+          // pick.detail.node.show = false
+        }
+        // if (Cesium.defined(pick)) {
+        //   const propertyKeys = pick.getPropertyIds();
+        //   console.log('propertyKeys: ', propertyKeys);
+        // }
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    };
+    if (typeof Cesium !== "undefined") {
+      window.startupCalled = true;
+      window.startup(Cesium).catch((error) => {
+        "use strict";
+        console.error(error);
+      });
+      Sandcastle.finishedLoading();
+    }
+  </script>
+</body>
+
+</html>

@@ -786,6 +786,7 @@ function processMetallicRoughnessUniforms(
   );
 
   const baseColorTexture = metallicRoughness.baseColorTexture;
+  console.log('baseColorTexture: ', baseColorTexture);
   if (defined(baseColorTexture) && !disableTextures) {
     processTexture(
       shaderBuilder,

@@ -34,6 +34,11 @@
     <script id="cesium_sandcastle_script">
       window.startup = async function (Cesium) {
         "use strict";
+
+  // 设置使用的token
+  Cesium.Ion.defaultAccessToken =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YzMxODZlYi1jNDhjLTRjODYtODgxNS01ODliNTU0YmY2NDMiLCJpZCI6Njg3NDIsImlhdCI6MTYzMjgyNzg0NH0.FX-F1srgLf2QorYyapx2VL44TJtgkdwdOAG7tqJmSxY";
+
         //Sandcastle_Begin
         // Power Plant design model provided by Bentley Systems
         const viewer = new Cesium.Viewer("cesiumContainer");

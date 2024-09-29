@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no" />
+  <meta name="description" content="Create 3D models using glTF." />
+  <meta name="cesium-sandcastle-labels" content="Tutorials,Showcases" />
+  <title>Cesium Demo</title>
+  <script type="text/javascript" src="../Sandcastle-header.js"></script>
+  <script type="text/javascript" src="../../../Build/CesiumUnminified/Cesium.js" nomodule></script>
+  <script type="module" src="../load-cesium-es6.js"></script>
+</head>
+
+<body class="sandcastle-loading" data-sandcastle-bucket="bucket-requirejs.html">
+  <style>
+    @import url(../templates/bucket.css);
+  </style>
+  <div id="cesiumContainer" class="fullSize"></div>
+  <div id="loadingOverlay">
+    <h1>Loading...</h1>
+  </div>
+  <div id="toolbar"></div>
+  <script id="cesium_sandcastle_script">
+
+
+    // 创建立方体几何体
+    function createCubeGeometry(size) {
+      const halfSize = size / 2;
+      const boundingSphere = Cesium.BoundingSphere.fromVertices([
+        -halfSize, -halfSize, halfSize,
+        halfSize, -halfSize, halfSize,
+        halfSize, halfSize, halfSize,
+        -halfSize, halfSize, halfSize,
+        -halfSize, -halfSize, -halfSize,
+        halfSize, -halfSize, -halfSize,
+        halfSize, halfSize, -halfSize,
+        -halfSize, halfSize, -halfSize
+      ])
+      const st = [
+        0.0, 0.0,  // 顶点 0
+        1.0, 0.0,  // 顶点 1
+        1.0, 1.0,  // 顶点 2
+        0.0, 1.0,  // 顶点 3
+        0.0, 0.0,  // 顶点 4
+        1.0, 0.0,  // 顶点 5
+        1.0, 1.0,  // 顶点 6
+        0.0, 1.0   // 顶点 7
+      ];
+      // console.log('boundingSphere: ', boundingSphere)
+      let geometry = new Cesium.Geometry({
+        attributes: {
+          position: new Cesium.GeometryAttribute({
+            componentDatatype: Cesium.ComponentDatatype.DOUBLE,
+            componentsPerAttribute: 3,
+            values: new Float64Array([
+              -halfSize, -halfSize, halfSize,
+              halfSize, -halfSize, halfSize,
+              halfSize, halfSize, halfSize,
+              -halfSize, halfSize, halfSize,
+              -halfSize, -halfSize, -halfSize,
+              halfSize, -halfSize, -halfSize,
+              halfSize, halfSize, -halfSize,
+              -halfSize, halfSize, -halfSize
+            ])
+          }),
+
+          st: new Cesium.GeometryAttribute({
+            componentDatatype: Cesium.ComponentDatatype.FLOAT,
+            componentsPerAttribute: 2,
+            values: new Float32Array(st)
+          }),
+          // normal: new Cesium.GeometryAttribute({
+          //   componentDatatype: Cesium.ComponentDatatype.FLOAT,
+          //   componentsPerAttribute: 3,
+          //   values: new Float32Array([
+          //     0, 0, 1,
+          //     0, 0, 1,
+          //     0, 0, 1,
+          //     0, 0, 1,
+          //     0, 0, -1,
+          //     0, 0, -1,
+          //     0, 0, -1,
+          //     0, 0, -1
+          //   ])
+          // })
+        },
+        indices: new Uint16Array([
+          4, 5, 6, 4, 6, 7,
+          0, 1, 5, 0, 5, 4,
+          2, 3, 7, 2, 7, 6,
+          0, 3, 7, 0, 7, 4,
+          1, 2, 6, 1, 6, 5,
+          0, 1, 2, 0, 2, 3,
+        ]),
+        primitiveType: Cesium.PrimitiveType.TRIANGLES,
+        boundingSphere
+      });
+      geometry = Cesium.GeometryPipeline.computeNormal(geometry)
+      console.log('geometry: ', geometry);
+
+      return geometry
+    }
+
+
+    const loadPrimitive = async (viewer) => {
+
+      const cubeGeometry = createCubeGeometry(1000000); // 创建一个边长为 1km 的立方体几何体
+
+      const center = Cesium.Cartesian3.fromDegrees(-115.0, 37.0)
+      // 初始模型矩阵
+      let modelMatrix = Cesium.Transforms.eastNorthUpToFixedFrame(center);
+
+      // 创建几何体实例
+      const geometryInstance = new Cesium.GeometryInstance({
+        geometry: cubeGeometry,
+        modelMatrix: modelMatrix,
+        attributes: {
+          color: Cesium.ColorGeometryInstanceAttribute.fromColor(Cesium.Color.BLUE),
+          show: new Cesium.ShowGeometryInstanceAttribute(true),
+          depthFailColor: Cesium.ColorGeometryInstanceAttribute.fromColor(Cesium.Color.AQUA),
+        }
+      });
+
+
+      const material = new Cesium.Material({
+        translucent: false,
+        fabric: {
+          // type: 'DiffuseMap',
+          uniforms: {
+            image: './yangguang.png',  // 这里填入你的贴图路径
+            repeat: new Cesium.Cartesian2(1, 1),
+          },
+          source: `czm_material czm_getMaterial(czm_materialInput materialInput) {
+            czm_material material = czm_getDefaultMaterial(materialInput);
+
+            vec2 st = materialInput.st;
+
+            vec4 textureColor = texture(image, st).rgba;
+
+            // 法线向量
+            material.diffuse = textureColor.rgb;
+            // material.specular = 1.;
+            // material.normal = normal;
+            material.alpha = 1.;
+
+            return material;
+          }`
+        },
+      });
+
+      // 创建 Primitive
+      const primitive = new Cesium.Primitive({
+        geometryInstances: geometryInstance,
+        // appearance: new Cesium.MaterialAppearance({
+        //   materialSupport: Cesium.MaterialAppearance.MaterialSupport.TEXTURED,
+        //   material: material,
+        //   flat: true,
+        //   faceForward: true
+        // }),
+        appearance: new Cesium.PerInstanceColorAppearance({
+          translucent: false,
+          flat: true,
+          faceForward: true,
+          // renderState: {
+          //   lineWidth: 3
+          // },
+          // material: material
+        }),
+        asynchronous: false
+      });
+
+
+
+      viewer.scene.primitives.add(primitive)
+      return primitive
+    }
+
+    window.startup = async function(Cesium) {
+      "use strict";
+      //Sandcastle_Begin
+
+      // Cesium.Ion.defaultAccessToken =
+      //   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YzMxODZlYi1jNDhjLTRjODYtODgxNS01ODliNTU0YmY2NDMiLCJpZCI6Njg3NDIsImlhdCI6MTYzMjgyNzg0NH0.FX-F1srgLf2QorYyapx2VL44TJtgkdwdOAG7tqJmSxY";
+
+      const viewer = new Cesium.Viewer("cesiumContainer");
+      viewer.scene.debugShowFramesPerSecond = true
+
+
+      const primitive = await loadPrimitive(viewer)
+      // viewer.scene.primitives.add(primitive)
+      console.log('primitve: ', primitive);
+
+
+      const handler = new Cesium.ScreenSpaceEventHandler(viewer.canvas);
+      const scene = viewer.scene;
+      handler.setInputAction((pos) => {
+        const pick = scene.pick(pos.position);
+        console.log('pick: ', pick);
+        if (Cesium.defined(pick) && pick.detail && pick.detail.node) {
+          // pick.detail.node.show = false
+        }
+        // if (Cesium.defined(pick)) {
+        //   const propertyKeys = pick.getPropertyIds();
+        //   console.log('propertyKeys: ', propertyKeys);
+        // }
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    };
+    if (typeof Cesium !== "undefined") {
+      window.startupCalled = true;
+      window.startup(Cesium).catch((error) => {
+        "use strict";
+        console.error(error);
+      });
+      Sandcastle.finishedLoading();
+    }
+  </script>
+</body>
+
+</html>

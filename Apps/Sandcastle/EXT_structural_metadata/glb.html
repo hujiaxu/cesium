@@ -36,6 +36,7 @@
         viewer.scene.debugShowFramesPerSecond = true
         function createCustomShader() {
           const customShader = new Cesium.CustomShader({
+
             fragmentShaderText: `
               void fragmentMain(FragmentInput fsInput, inout czm_modelMaterial material) {
                 int id = fsInput.featureIds.featureId_0;
@@ -89,7 +90,10 @@
 
         // createModel("./cube_instance.gltf");
         // createModel("./single_component_100万.gltf");
-        createModel("./component_100.gltf");
+        // createModel("./component_100.gltf");
+        // createModel("./electric.gltf");
+        createModel("./texture.glb");
+        // createModel("./texture_100.gltf");
         // createModel('http://localhost:8003/glTF/GpuInstancesMetadata/GpuInstancesMetadata.gltf')
         // createModel("./cube_instance_y1.gltf");
         // createModel('./cube.gltf')

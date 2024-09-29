@@ -1,13 +1,13 @@
 import fs from 'fs';
 
 // 创建1000x1000排列的VEC3数据
-const rows = 1000;
-const cols = 500;
+const rows = 1;
+const cols = 1;
 const vec3Data = [];
 
 for (let i = 0; i < rows; i++) {
     for (let j = 0; j < cols; j++) {
-        vec3Data.push([i * 5, 0, j * 2]); // 假设VEC3的值为[i / 2, 0, j / 2]
+        vec3Data.push([i * 5, 0, j * 5]); // 假设VEC3的值为[i / 2, 0, j / 2]
     }
 }
 
@@ -25,7 +25,7 @@ const buffer = float32Array.buffer;
 console.log(buffer.byteLength, 'buffer.byteLength')
 
 // 将ArrayBuffer保存为.bin文件
-fs.writeFileSync('component_100000.bin', Buffer.from(buffer));
+fs.writeFileSync('texture_component_1.bin', Buffer.from(buffer));
 
 // 创建GLTF JSON
 const gltf = {
